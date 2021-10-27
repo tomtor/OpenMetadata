@@ -31,9 +31,11 @@ import org.openmetadata.catalog.util.EntityUtil.Fields;
 import org.openmetadata.catalog.util.JsonUtils;
 
 import java.io.IOException;
+import java.net.URI;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -195,6 +197,9 @@ public class TeamRepository extends EntityRepository<Team> {
     public Date getUpdatedAt() { return entity.getUpdatedAt(); }
 
     @Override
+    public URI getHref() { return entity.getHref(); }
+
+    @Override
     public EntityReference getEntityReference() {
       return new EntityReference().withId(getId()).withName(getFullyQualifiedName()).withDescription(getDescription())
               .withDisplayName(getDisplayName()).withType(Entity.TEAM);
@@ -227,6 +232,9 @@ public class TeamRepository extends EntityRepository<Team> {
     }
 
     @Override
+    public ChangeDescription getChangeDescription() { return entity.getChangeDescription(); }
+
+    @Override
     public void setTags(List<TagLabel> tags) { }
   }
 
@@ -244,18 +252,34 @@ public class TeamRepository extends EntityRepository<Team> {
       if (updated.getEntity().getDeleted() != original.getEntity().getDeleted()) {
         throw new IllegalArgumentException(CatalogExceptionMessage.readOnlyAttribute("Team", "deleted"));
       }
+      recordChange("profile", original.getEntity().getProfile(), updated.getEntity().getProfile());
       updateUsers(original.getEntity(), updated.getEntity());
     }
 
     private void updateUsers(Team origTeam, Team updatedTeam) {
+      List<EntityReference> origUsers = Optional.ofNullable(origTeam.getUsers()).orElse(Collections.emptyList());
+      List<EntityReference> updatedUsers = Optional.ofNullable(updatedTeam.getUsers()).orElse(Collections.emptyList());
+
       // Remove users from original and add users from updated
       dao.relationshipDAO().deleteFrom(origTeam.getId().toString(), Relationship.CONTAINS.ordinal(), "user");
 
+      updatedUsers.sort(Comparator.comparing(EntityReference::getId));
       for (EntityReference user : Optional.ofNullable(updatedTeam.getUsers()).orElse(Collections.emptyList())) {
         dao.relationshipDAO().insert(updatedTeam.getId().toString(), user.getId().toString(),
                 "team", "user", Relationship.CONTAINS.ordinal());
       }
-      recordChange("users", origTeam.getUsers(), updatedTeam.getUsers());
+
+      if (origUsers.isEmpty()) {
+        origUsers = null;
+      } else {
+        origUsers.sort(Comparator.comparing(EntityReference::getId));
+      }
+      if (updatedUsers.isEmpty()) {
+        updatedUsers = null;
+      } else {
+        updatedUsers.sort(Comparator.comparing(EntityReference::getId));
+      }
+      recordChange("users", origUsers, updatedUsers);
     }
   }
 }
